@@ -6,6 +6,8 @@ use axum::{
 };
 use dotenvy::dotenv;
 use sqlx::postgres::PgPoolOptions;
+use tracing::level_filters::LevelFilter;
+use tracing_subscriber::EnvFilter;
 
 mod handlers;
 mod types;
@@ -14,6 +16,13 @@ mod utils;
 #[tokio::main]
 async fn main() {
     dotenv().ok();
+
+    let filter = EnvFilter::builder()
+        .with_env_var("APP_LOG")
+        .with_default_directive(LevelFilter::INFO.into())
+        .from_env_lossy();
+
+    tracing_subscriber::fmt().with_env_filter(filter).init();
 
     // database address
     let db_url = env::var("DATABASE_URL")
