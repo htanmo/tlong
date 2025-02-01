@@ -1,7 +1,7 @@
 use axum::{
-    extract::{rejection::JsonRejection, State},
+    extract::{rejection::JsonRejection, Path, State},
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Redirect},
     Json,
 };
 use serde_json::json;
@@ -78,6 +78,41 @@ pub async fn create_short_url(
                 _ => json!({"error": "Unknown JSON parsing error"}),
             };
             (StatusCode::BAD_REQUEST, Json(error_message)).into_response()
+        }
+    }
+}
+
+pub async fn handle_short_url(
+    State(pool): State<PgPool>,
+    Path(short_code): Path<String>,
+) -> impl IntoResponse {
+    let query = r#"
+        SELECT long_url
+        FROM urls
+        WHERE short_code = $1
+    "#;
+    let result: Result<Option<String>, sqlx::Error> = sqlx::query_scalar(query)
+        .bind(&short_code)
+        .fetch_optional(&pool)
+        .await;
+
+    match result {
+        Ok(data) => match data {
+            Some(url) => {
+                debug!("Redirecting to long URL: {}", url);
+                Redirect::permanent(&url).into_response()
+            }
+            None => {
+                debug!("Short code '{}' not found in the database", short_code);
+                StatusCode::NOT_FOUND.into_response()
+            }
+        },
+        Err(e) => {
+            error!(
+                "For short code '{}': {}",
+                short_code, e
+            );
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
 }

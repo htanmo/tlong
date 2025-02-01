@@ -22,6 +22,7 @@ async fn main() {
         .with_default_directive(LevelFilter::INFO.into())
         .from_env_lossy();
 
+    // logging
     tracing_subscriber::fmt().with_env_filter(filter).init();
 
     // database address
@@ -38,6 +39,7 @@ async fn main() {
     // app routes
     let app = Router::new()
         .route("/", get(|| async { "Hello, World!" }))
+        .route("/{short_code}", get(handlers::handle_short_url))
         .route("/api/v1/shorten", post(handlers::create_short_url))
         .with_state(db);
 
