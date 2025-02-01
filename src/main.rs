@@ -7,7 +7,7 @@ use axum::{
 use dotenvy::dotenv;
 use sqlx::postgres::PgPoolOptions;
 use tokio::signal;
-use tracing::{error, info, level_filters::LevelFilter};
+use tracing::{error, info, level_filters::LevelFilter, warn};
 use tracing_subscriber::EnvFilter;
 
 mod handlers;
@@ -66,7 +66,10 @@ async fn main() {
         .with_state(db);
 
     // server address
-    let address = "0.0.0.0:3000";
+    let address = env::var("SERVER_ADDRESS").unwrap_or_else(|_| {
+        warn!("SERVER_ADDRESS environment variable not set, using default address.");
+        "127.0.0.1:8080".to_string()
+    });
     info!("Starting server on {address}");
 
     // running the server on the above address

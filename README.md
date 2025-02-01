@@ -28,6 +28,7 @@ For the times, when your urls are too long.
     List of environment variables this project needs.
     ```dotenv
     APP_LOG=trace # Optional
+    SERVER_ADDRESS=127.0.0.1:3000 # Optional
     DATABASE_URL=postgres://username:password@localhost/dbname
     ```
 
