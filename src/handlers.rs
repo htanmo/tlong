@@ -4,7 +4,7 @@ use axum::{
     response::{IntoResponse, Redirect},
     Json,
 };
-use serde_json::json;
+use serde_json::{json, Value};
 use sqlx::PgPool;
 use tracing::{debug, error};
 
@@ -12,6 +12,14 @@ use crate::{
     types::{ShortenRequest, ShortenResponse},
     utils::{encode_long_url, valid_short_code, valid_url},
 };
+
+pub async fn health_check() -> (StatusCode, Json<Value>) {
+    let response = json!({
+        "status": "ok",
+        "version": "1.0.0",
+    });
+    (StatusCode::OK, Json(response))
+}
 
 pub async fn create_short_url(
     State(pool): State<PgPool>,
@@ -113,10 +121,7 @@ pub async fn handle_short_url(
             }
         },
         Err(e) => {
-            error!(
-                "For short code '{}': {}",
-                short_code, e
-            );
+            error!("For short code '{}': {}", short_code, e);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }

@@ -62,6 +62,7 @@ async fn main() {
     // app routes
     let app = Router::new()
         .route("/{short_code}", get(handlers::handle_short_url))
+        .route("/api/v1/health", get(handlers::health_check))
         .route("/api/v1/shorten", post(handlers::create_short_url))
         .with_state(db);
 
