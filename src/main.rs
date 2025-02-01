@@ -7,8 +7,13 @@ use axum::{
 use dotenvy::dotenv;
 use sqlx::postgres::PgPoolOptions;
 use tokio::signal;
-use tracing::{error, info, level_filters::LevelFilter, warn};
-use tracing_subscriber::EnvFilter;
+use tower_http::{
+    trace::{DefaultMakeSpan, DefaultOnFailure, DefaultOnResponse, TraceLayer},
+    LatencyUnit,
+};
+use tracing::{error, info, level_filters::LevelFilter, warn, Level};
+use tracing_appender::rolling::{RollingFileAppender, Rotation};
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 mod handlers;
 mod types;
@@ -23,8 +28,16 @@ async fn main() {
         .with_default_directive(LevelFilter::INFO.into())
         .from_env_lossy();
 
-    // logging
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    // log file config
+    let file_appender = RollingFileAppender::new(Rotation::DAILY, "/var/log/tlong", "tlong.log");
+    let (non_blocking_writer, _guard) = tracing_appender::non_blocking(file_appender);
+
+    // logger
+    tracing_subscriber::registry()
+        .with(fmt::layer().json())
+        .with(fmt::layer().json().with_writer(non_blocking_writer))
+        .with(filter)
+        .init();
 
     // database address
     let db_url = match env::var("DATABASE_URL") {
@@ -64,6 +77,21 @@ async fn main() {
         .route("/{short_code}", get(handlers::handle_short_url))
         .route("/api/v1/health", get(handlers::health_check))
         .route("/api/v1/shorten", post(handlers::create_short_url))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(
+                    DefaultMakeSpan::new()
+                        .include_headers(true)
+                        .level(Level::INFO),
+                )
+                .on_response(
+                    DefaultOnResponse::new()
+                        .latency_unit(LatencyUnit::Micros)
+                        .include_headers(true)
+                        .level(Level::INFO),
+                )
+                .on_failure(DefaultOnFailure::new().level(Level::ERROR)),
+        )
         .with_state(db);
 
     // server address
