@@ -6,6 +6,7 @@ use axum::{
 };
 use serde_json::json;
 use sqlx::PgPool;
+use tracing::{debug, error};
 
 use crate::{
     types::{ShortenRequest, ShortenResponse},
@@ -31,6 +32,7 @@ pub async fn create_short_url(
             // encoding the long url to generate short code
             let encoded_url = encode_long_url(&long_url).await;
             let short_code = encoded_url[0..8].to_string();
+            debug!("Long url: {}, Short code: {}", long_url, short_code);
 
             // constructing the short url
             let base_url = "http://0.0.0.0:3000/";
@@ -48,17 +50,21 @@ pub async fn create_short_url(
             .await
             {
                 Ok(_) => {
+                    debug!("Successfully inserted short URL: {}", short_url);
                     let response = ShortenResponse {
                         long_url,
                         short_url,
                     };
                     (StatusCode::CREATED, Json(response)).into_response()
                 }
-                Err(_) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({"error": "Failed to insert into the database"})),
-                )
-                    .into_response(),
+                Err(e) => {
+                    error!("Error inserting into database: {e}");
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({"error": "Failed to insert into the database"})),
+                    )
+                        .into_response()
+                }
             }
         }
         Err(rejection) => {
