@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, process};
 
 use axum::{
     routing::{get, post},
@@ -6,7 +6,8 @@ use axum::{
 };
 use dotenvy::dotenv;
 use sqlx::postgres::PgPoolOptions;
-use tracing::{info, level_filters::LevelFilter};
+use tokio::signal;
+use tracing::{error, info, level_filters::LevelFilter};
 use tracing_subscriber::EnvFilter;
 
 mod handlers;
@@ -26,19 +27,40 @@ async fn main() {
     tracing_subscriber::fmt().with_env_filter(filter).init();
 
     // database address
-    let db_url = env::var("DATABASE_URL")
-        .expect("DATABASE_URL environment variable is required but not set");
+    let db_url = match env::var("DATABASE_URL") {
+        Ok(var) => var,
+        Err(_) => {
+            error!("DATABASE_URL environment variable is required but not set.");
+            process::exit(1);
+        }
+    };
 
     // database config
-    let db = PgPoolOptions::new()
+    let db = match PgPoolOptions::new()
         .max_connections(10)
         .connect(&db_url)
         .await
-        .expect("failed to connect to database");
+    {
+        Ok(pool) => pool,
+        Err(e) => {
+            error!("Failed to connect to database: {e}");
+            process::exit(1);
+        }
+    };
+
+    // run pending migrations
+    match sqlx::migrate!().run(&db).await {
+        Ok(_) => {
+            info!("Migration applied successfully...");
+        }
+        Err(e) => {
+            error!("Migration failed: {e}");
+            process::exit(1);
+        }
+    }
 
     // app routes
     let app = Router::new()
-        .route("/", get(|| async { "Hello, World!" }))
         .route("/{short_code}", get(handlers::handle_short_url))
         .route("/api/v1/shorten", post(handlers::create_short_url))
         .with_state(db);
@@ -48,6 +70,22 @@ async fn main() {
     info!("Starting server on {address}");
 
     // running the server on the above address
-    let listener = tokio::net::TcpListener::bind(&address).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = match tokio::net::TcpListener::bind(&address).await {
+        Ok(listener) => listener,
+        Err(_) => {
+            error!("Failed to bind to address.");
+            process::exit(1);
+        }
+    };
+
+    // serve the application
+    let server = axum::serve(listener, app);
+    tokio::select! {
+        _ = server => {}
+        _ = signal::ctrl_c() => {
+            info!("Shutting down gracefully...");
+        }
+    }
+
+    info!("Server stopped.");
 }
