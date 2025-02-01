@@ -10,7 +10,7 @@ use tracing::{debug, error};
 
 use crate::{
     types::{ShortenRequest, ShortenResponse},
-    utils::{encode_long_url, valid_url},
+    utils::{encode_long_url, valid_short_code, valid_url},
 };
 
 pub async fn create_short_url(
@@ -86,6 +86,11 @@ pub async fn handle_short_url(
     State(pool): State<PgPool>,
     Path(short_code): Path<String>,
 ) -> impl IntoResponse {
+    // short code validation
+    if !valid_short_code(&short_code) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+
     let query = r#"
         SELECT long_url
         FROM urls
