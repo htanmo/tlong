@@ -81,13 +81,13 @@ async fn main() {
             TraceLayer::new_for_http()
                 .make_span_with(
                     DefaultMakeSpan::new()
-                        .include_headers(true)
+                        .include_headers(false)
                         .level(Level::INFO),
                 )
                 .on_response(
                     DefaultOnResponse::new()
-                        .latency_unit(LatencyUnit::Micros)
-                        .include_headers(true)
+                        .latency_unit(LatencyUnit::Millis)
+                        .include_headers(false)
                         .level(Level::INFO),
                 )
                 .on_failure(DefaultOnFailure::new().level(Level::ERROR)),
