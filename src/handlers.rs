@@ -42,6 +42,7 @@ pub async fn create_short_url(
                 "
                 INSERT INTO urls (long_url, short_code)
                 VALUES ($1, $2)
+                ON CONFLICT (short_code) DO NOTHING
                 ",
             )
             .bind(&long_url)
