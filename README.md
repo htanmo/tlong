@@ -44,3 +44,16 @@ For the times, when your urls are too long.
         sqlx database setup
         ```
 
+5. Build the application:
+
+    ```sh
+    cargo build --release
+    ```
+
+6. Run the server:
+
+    ```sh
+    cargo run --release
+    ```
+
+    The server will start on `http://127.0.0.1:8080` or `SERVER_ADDRESS` if set.
