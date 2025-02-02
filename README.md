@@ -32,7 +32,7 @@ For the times, when your urls are too long.
     SERVER_ADDRESS=127.0.0.1:3000 # Optional (defaults to 0.0.0.0:8080)
     REDIS_URL=redis://127.0.0.1:6379
     DATABASE_URL=postgres://username:password@localhost/dbname
-    BASE_URL=https://yourdomain.com (defaults to http://`SERVER_ADDRESS`)
+    BASE_URL=https://yourdomain.com # (defaults to http://`SERVER_ADDRESS`)
     ```
 
 4. Database setup:
