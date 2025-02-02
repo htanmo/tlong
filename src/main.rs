@@ -1,7 +1,7 @@
 use std::{env, process, time::Duration};
 
 use axum::{
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use dotenvy::dotenv;
@@ -66,6 +66,7 @@ async fn main() {
         .route("/{short_code}", get(handlers::handle_short_url))
         .route("/api/v1/health", get(handlers::health_check))
         .route("/api/v1/shorten", post(handlers::create_short_url))
+        .route("/api/v1/{short_code}", delete(handlers::delete_short_url))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(DefaultMakeSpan::new().level(Level::INFO))

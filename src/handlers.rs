@@ -119,3 +119,29 @@ pub async fn handle_short_url(
         }
     }
 }
+
+pub async fn delete_short_url(
+    State(pool): State<PgPool>,
+    Path(short_code): Path<String>,
+) -> Result<Json<Value>, StatusCode> {
+    if !valid_short_code(&short_code) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let result: Option<String> = sqlx::query_scalar(
+        "
+        DELETE FROM urls
+        WHERE short_code = $1
+        RETURNING short_code
+        ",
+    )
+    .bind(&short_code)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    match result {
+        Some(_) => Ok(Json(json!({"message": "short url deleted successfully"}))),
+        None => Err(StatusCode::NOT_FOUND),
+    }
+}
