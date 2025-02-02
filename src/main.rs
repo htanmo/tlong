@@ -16,6 +16,7 @@ use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 mod handlers;
+mod models;
 mod types;
 mod utils;
 
@@ -66,6 +67,7 @@ async fn main() {
         .route("/{short_code}", get(handlers::handle_short_url))
         .route("/api/v1/health", get(handlers::health_check))
         .route("/api/v1/shorten", post(handlers::create_short_url))
+        .route("/api/v1/shorten", get(handlers::get_all_short_url))
         .route("/api/v1/{short_code}", delete(handlers::delete_short_url))
         .layer(
             TraceLayer::new_for_http()

@@ -3,7 +3,7 @@ CREATE TABLE
         id SERIAL PRIMARY KEY,
         long_url TEXT NOT NULL,
         short_code VARCHAR(8) UNIQUE NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL
     );
 
 CREATE INDEX idx_short_code ON urls (short_code);

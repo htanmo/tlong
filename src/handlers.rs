@@ -9,7 +9,8 @@ use sqlx::PgPool;
 use tracing::{debug, error, info};
 
 use crate::{
-    types::{ShortenRequest, ShortenResponse},
+    models::UrlDetail,
+    types::{ShortenRequest, ShortenResponse, UrlDetailResponse},
     utils::{encode_long_url, valid_short_code, valid_url},
 };
 
@@ -87,11 +88,12 @@ pub async fn handle_short_url(
     State(pool): State<PgPool>,
     Path(short_code): Path<String>,
 ) -> impl IntoResponse {
-    // short code validation
+    // Short code validation
     if !valid_short_code(&short_code) {
         return StatusCode::BAD_REQUEST.into_response();
     }
 
+    // Fetch long url from database
     let query = r#"
         SELECT long_url
         FROM urls
@@ -105,6 +107,7 @@ pub async fn handle_short_url(
     match result {
         Ok(data) => match data {
             Some(long_url) => {
+                // Redirect
                 info!("Redirecting to long URL: {}", long_url);
                 Redirect::permanent(&long_url).into_response()
             }
@@ -128,6 +131,7 @@ pub async fn delete_short_url(
         return Err(StatusCode::BAD_REQUEST);
     }
 
+    // Checking if the short code exists
     let result: Option<String> = sqlx::query_scalar(
         "
         DELETE FROM urls
@@ -144,4 +148,31 @@ pub async fn delete_short_url(
         Some(_) => Ok(Json(json!({"message": "short url deleted successfully"}))),
         None => Err(StatusCode::NOT_FOUND),
     }
+}
+
+pub async fn get_all_short_url(
+    State(pool): State<PgPool>,
+) -> Result<Json<Vec<UrlDetailResponse>>, StatusCode> {
+    // Fetching all the urls from the database
+    let results = sqlx::query_as::<_, UrlDetail>(
+        "
+        SELECT short_code, long_url, created_at
+        FROM urls
+        ORDER BY created_at DESC
+        ",
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let response: Vec<UrlDetailResponse> = results
+        .into_iter()
+        .map(|row| UrlDetailResponse {
+            short_url: format!("http:0.0.0.0:8080/{}", row.short_code),
+            long_url: row.long_url,
+            created_at: row.created_at.to_string(),
+        })
+        .collect();
+
+    Ok(Json(response))
 }
