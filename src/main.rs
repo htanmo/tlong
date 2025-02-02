@@ -69,6 +69,7 @@ async fn main() {
         .route("/api/v1/shorten", post(handlers::create_short_url))
         .route("/api/v1/shorten", get(handlers::get_all_short_url))
         .route("/api/v1/{short_code}", delete(handlers::delete_short_url))
+        .route("/api/v1/{short_code}", get(handlers::get_short_url_details))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(DefaultMakeSpan::new().level(Level::INFO))

@@ -176,3 +176,35 @@ pub async fn get_all_short_url(
 
     Ok(Json(response))
 }
+
+pub async fn get_short_url_details(
+    State(pool): State<PgPool>,
+    Path(short_code): Path<String>,
+) -> Result<Json<UrlDetailResponse>, StatusCode> {
+    // Validate the short url
+    if !valid_short_code(&short_code) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    // Get details about short code
+    match sqlx::query_as::<_, UrlDetail>(
+        "SELECT long_url, short_code, created_at FROM urls WHERE short_code = $1",
+    )
+    .bind(short_code)
+    .fetch_optional(&pool)
+    .await
+    {
+        Ok(url_details) => match url_details {
+            Some(detail) => {
+                let response = UrlDetailResponse {
+                    short_url: format!("http://0.0.0.0:8080/{}", detail.short_code),
+                    long_url: detail.long_url,
+                    created_at: detail.created_at.to_string(),
+                };
+                Ok(Json(response))
+            }
+            None => Err(StatusCode::NOT_FOUND),
+        },
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
