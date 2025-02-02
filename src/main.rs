@@ -10,6 +10,7 @@ use sqlx::postgres::PgPoolOptions;
 use state::AppState;
 use tokio::signal;
 use tower_http::{
+    timeout::TimeoutLayer,
     trace::{DefaultMakeSpan, DefaultOnFailure, DefaultOnResponse, TraceLayer},
     LatencyUnit,
 };
@@ -113,6 +114,7 @@ async fn main() {
                 )
                 .on_failure(DefaultOnFailure::new().level(Level::ERROR)),
         )
+        .layer(TimeoutLayer::new(Duration::from_secs(15)))
         .with_state(state);
 
     info!("Starting server on {}", &address);
