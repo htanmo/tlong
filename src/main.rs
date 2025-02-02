@@ -6,6 +6,7 @@ use axum::{
 };
 use dotenvy::dotenv;
 use sqlx::postgres::PgPoolOptions;
+use state::AppState;
 use tokio::signal;
 use tower_http::{
     trace::{DefaultMakeSpan, DefaultOnFailure, DefaultOnResponse, TraceLayer},
@@ -17,6 +18,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 mod handlers;
 mod models;
+mod state;
 mod types;
 mod utils;
 
@@ -62,6 +64,9 @@ async fn main() {
     }
     info!("Database migrations applied successfully.");
 
+    // Application state
+    let state = AppState::new(db);
+
     // Build the application router
     let app = Router::new()
         .route("/{short_code}", get(handlers::handle_short_url))
@@ -80,7 +85,7 @@ async fn main() {
                 )
                 .on_failure(DefaultOnFailure::new().level(Level::ERROR)),
         )
-        .with_state(db);
+        .with_state(state);
 
     // Server configuration
     let address = env::var("SERVER_ADDRESS").unwrap_or_else(|_| {

@@ -5,11 +5,11 @@ use axum::{
     Json,
 };
 use serde_json::{json, Value};
-use sqlx::PgPool;
 use tracing::{debug, error, info};
 
 use crate::{
     models::UrlDetail,
+    state::AppState,
     types::{ShortenRequest, ShortenResponse, UrlDetailResponse},
     utils::{encode_long_url, valid_short_code, valid_url},
 };
@@ -23,7 +23,7 @@ pub async fn health_check() -> (StatusCode, Json<Value>) {
 }
 
 pub async fn create_short_url(
-    State(pool): State<PgPool>,
+    State(state): State<AppState>,
     payload: Result<Json<ShortenRequest>, JsonRejection>,
 ) -> impl IntoResponse {
     let payload = match payload {
@@ -63,7 +63,7 @@ pub async fn create_short_url(
     .bind(&payload.long_url)
     .bind(&short_code);
 
-    match query.execute(&pool).await {
+    match query.execute(&state.db).await {
         Ok(_) => {
             let short_url = format!("http://0.0.0.0:3000/{}", short_code);
             info!("Created short URL: {}", short_url);
@@ -85,7 +85,7 @@ pub async fn create_short_url(
 }
 
 pub async fn handle_short_url(
-    State(pool): State<PgPool>,
+    State(state): State<AppState>,
     Path(short_code): Path<String>,
 ) -> impl IntoResponse {
     // Short code validation
@@ -101,7 +101,7 @@ pub async fn handle_short_url(
     "#;
     let result: Result<Option<String>, sqlx::Error> = sqlx::query_scalar(query)
         .bind(&short_code)
-        .fetch_optional(&pool)
+        .fetch_optional(&state.db)
         .await;
 
     match result {
@@ -124,7 +124,7 @@ pub async fn handle_short_url(
 }
 
 pub async fn delete_short_url(
-    State(pool): State<PgPool>,
+    State(state): State<AppState>,
     Path(short_code): Path<String>,
 ) -> Result<Json<Value>, StatusCode> {
     if !valid_short_code(&short_code) {
@@ -140,7 +140,7 @@ pub async fn delete_short_url(
         ",
     )
     .bind(&short_code)
-    .fetch_optional(&pool)
+    .fetch_optional(&state.db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -151,7 +151,7 @@ pub async fn delete_short_url(
 }
 
 pub async fn get_all_short_url(
-    State(pool): State<PgPool>,
+    State(state): State<AppState>,
 ) -> Result<Json<Vec<UrlDetailResponse>>, StatusCode> {
     // Fetching all the urls from the database
     let results = sqlx::query_as::<_, UrlDetail>(
@@ -161,7 +161,7 @@ pub async fn get_all_short_url(
         ORDER BY created_at DESC
         ",
     )
-    .fetch_all(&pool)
+    .fetch_all(&state.db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -178,7 +178,7 @@ pub async fn get_all_short_url(
 }
 
 pub async fn get_short_url_details(
-    State(pool): State<PgPool>,
+    State(state): State<AppState>,
     Path(short_code): Path<String>,
 ) -> Result<Json<UrlDetailResponse>, StatusCode> {
     // Validate the short url
@@ -191,7 +191,7 @@ pub async fn get_short_url_details(
         "SELECT long_url, short_code, created_at FROM urls WHERE short_code = $1",
     )
     .bind(short_code)
-    .fetch_optional(&pool)
+    .fetch_optional(&state.db)
     .await
     {
         Ok(url_details) => match url_details {
