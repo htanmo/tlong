@@ -5,6 +5,7 @@ use axum::{
     Router,
 };
 use dotenvy::dotenv;
+use redis::Client;
 use sqlx::postgres::PgPoolOptions;
 use state::AppState;
 use tokio::signal;
@@ -47,7 +48,8 @@ async fn main() {
         process::exit(1);
     });
 
-    let db = PgPoolOptions::new()
+    // Postgres
+    let pg_db = PgPoolOptions::new()
         .max_connections(50)
         .acquire_timeout(Duration::from_secs(5))
         .connect(&db_url)
@@ -58,14 +60,31 @@ async fn main() {
         });
 
     // Run database migrations
-    if let Err(e) = sqlx::migrate!().run(&db).await {
+    if let Err(e) = sqlx::migrate!().run(&pg_db).await {
         error!("Migration failed: {e}");
         process::exit(1);
     }
     info!("Database migrations applied successfully.");
 
+    // Redis
+    let redis_url = env::var("REDIS_URL").unwrap_or_else(|_| {
+        error!("REDIS_URL environment variable is required but not set.");
+        process::exit(1);
+    });
+    let client = Client::open(redis_url).unwrap_or_else(|e| {
+        error!("Failed to create redis database connection: {e}");
+        process::exit(1);
+    });
+    let redis_db = r2d2::Pool::builder()
+        .max_size(15)
+        .build(client)
+        .unwrap_or_else(|e| {
+            error!("Failed to connect to redis database: {e}");
+            process::exit(1);
+        });
+
     // Application state
-    let state = AppState::new(db);
+    let state = AppState::new(pg_db, redis_db);
 
     // Build the application router
     let app = Router::new()

@@ -63,7 +63,7 @@ pub async fn create_short_url(
     .bind(&payload.long_url)
     .bind(&short_code);
 
-    match query.execute(&state.db).await {
+    match query.execute(&state.pg_db).await {
         Ok(_) => {
             let short_url = format!("http://0.0.0.0:3000/{}", short_code);
             info!("Created short URL: {}", short_url);
@@ -101,7 +101,7 @@ pub async fn handle_short_url(
     "#;
     let result: Result<Option<String>, sqlx::Error> = sqlx::query_scalar(query)
         .bind(&short_code)
-        .fetch_optional(&state.db)
+        .fetch_optional(&state.pg_db)
         .await;
 
     match result {
@@ -140,7 +140,7 @@ pub async fn delete_short_url(
         ",
     )
     .bind(&short_code)
-    .fetch_optional(&state.db)
+    .fetch_optional(&state.pg_db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -161,7 +161,7 @@ pub async fn get_all_short_url(
         ORDER BY created_at DESC
         ",
     )
-    .fetch_all(&state.db)
+    .fetch_all(&state.pg_db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -191,7 +191,7 @@ pub async fn get_short_url_details(
         "SELECT long_url, short_code, created_at FROM urls WHERE short_code = $1",
     )
     .bind(short_code)
-    .fetch_optional(&state.db)
+    .fetch_optional(&state.pg_db)
     .await
     {
         Ok(url_details) => match url_details {

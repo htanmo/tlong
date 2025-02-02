@@ -8,6 +8,7 @@ For the times, when your urls are too long.
 
 - [Rust](https://www.rust-lang.org/)
 - [Postgres](https://www.postgresql.org/)
+- [Redis](https://redis.io/)
 
 ### Steps to install
 
@@ -29,6 +30,7 @@ For the times, when your urls are too long.
     ```dotenv
     APP_LOG=trace # Optional
     SERVER_ADDRESS=127.0.0.1:3000 # Optional
+    REDIS_URL=redis://127.0.0.1:6379
     DATABASE_URL=postgres://username:password@localhost/dbname
     ```
 
