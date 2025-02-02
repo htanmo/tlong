@@ -4,6 +4,7 @@ use axum::{
     response::{IntoResponse, Redirect},
     Json,
 };
+use redis::Commands;
 use serde_json::{json, Value};
 use tracing::{debug, error, info};
 
@@ -65,7 +66,7 @@ pub async fn create_short_url(
 
     match query.execute(&state.pg_db).await {
         Ok(_) => {
-            let short_url = format!("http://0.0.0.0:3000/{}", short_code);
+            let short_url = format!("http://0.0.0.0:8080/{}", short_code);
             info!("Created short URL: {}", short_url);
             let response = ShortenResponse {
                 long_url: payload.long_url,
@@ -92,6 +93,28 @@ pub async fn handle_short_url(
     if !valid_short_code(&short_code) {
         return StatusCode::BAD_REQUEST.into_response();
     }
+    let mut redis_conn = match state.redis_db.get() {
+        Ok(conn) => conn,
+        Err(e) => {
+            error!("Failed to get Redis connection: {e}");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    // Check cache in Redis
+    match redis_conn.get::<_, Option<String>>(&short_code) {
+        Ok(Some(long_url)) => {
+            info!("Cache hit: Redirecting to {}", long_url);
+            return Redirect::permanent(&long_url).into_response();
+        }
+        Ok(None) => {
+            info!("Cache miss for short code: {}", short_code);
+        }
+        Err(e) => {
+            error!("Redis error: {e}");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    }
 
     // Fetch long url from database
     let query = r#"
@@ -109,6 +132,9 @@ pub async fn handle_short_url(
             Some(long_url) => {
                 // Redirect
                 info!("Redirecting to long URL: {}", long_url);
+                if let Err(e) = redis_conn.set_ex::<_, _, ()>(&short_code, &long_url, 3600) {
+                    error!("Failed to cache URL in Redis: {e}");
+                }
                 Redirect::permanent(&long_url).into_response()
             }
             None => {
