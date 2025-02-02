@@ -83,8 +83,17 @@ async fn main() {
             process::exit(1);
         });
 
+    // Server address
+    let address = env::var("SERVER_ADDRESS").unwrap_or_else(|_| {
+        warn!("SERVER_ADDRESS environment variable not set, using default address.");
+        "0.0.0.0:8080".to_string()
+    });
+
+    // Base url
+    let base_url = env::var("BASE_URL").unwrap_or_else(|_| format!("http://{}", &address));
+
     // Application state
-    let state = AppState::new(pg_db, redis_db);
+    let state = AppState::new(pg_db, redis_db, base_url);
 
     // Build the application router
     let app = Router::new()
@@ -106,21 +115,17 @@ async fn main() {
         )
         .with_state(state);
 
-    // Server configuration
-    let address = env::var("SERVER_ADDRESS").unwrap_or_else(|_| {
-        warn!("SERVER_ADDRESS environment variable not set, using default address.");
-        "0.0.0.0:8080".to_string()
-    });
-    info!("Starting server on {}", address);
+    info!("Starting server on {}", &address);
 
-    // Start the server
-    let listener = tokio::net::TcpListener::bind(&address)
+    // Server configuration
+    let listener = tokio::net::TcpListener::bind(address)
         .await
         .unwrap_or_else(|e| {
             error!("Failed to bind to address: {e}");
             process::exit(1);
         });
 
+    // Start the server
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await

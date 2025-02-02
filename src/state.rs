@@ -8,10 +8,15 @@ pub type RedisPool = Pool<Client>;
 pub struct AppState {
     pub pg_db: PgPool,
     pub redis_db: RedisPool,
+    pub base_url: String,
 }
 
 impl AppState {
-    pub fn new(pg_db: PgPool, redis_db: RedisPool) -> Self {
-        Self { pg_db, redis_db }
+    pub fn new(pg_db: PgPool, redis_db: RedisPool, base_url: String) -> Self {
+        Self {
+            pg_db,
+            redis_db,
+            base_url,
+        }
     }
 }

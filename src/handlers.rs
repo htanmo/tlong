@@ -66,7 +66,7 @@ pub async fn create_short_url(
 
     match query.execute(&state.pg_db).await {
         Ok(_) => {
-            let short_url = format!("http://0.0.0.0:8080/{}", short_code);
+            let short_url = format!("{}/{}", state.base_url, short_code);
             info!("Created short URL: {}", short_url);
             let response = ShortenResponse {
                 long_url: payload.long_url,
@@ -194,7 +194,7 @@ pub async fn get_all_short_url(
     let response: Vec<UrlDetailResponse> = results
         .into_iter()
         .map(|row| UrlDetailResponse {
-            short_url: format!("http:0.0.0.0:8080/{}", row.short_code),
+            short_url: format!("{}/{}", state.base_url, row.short_code),
             long_url: row.long_url,
             created_at: row.created_at.to_string(),
         })
@@ -223,7 +223,7 @@ pub async fn get_short_url_details(
         Ok(url_details) => match url_details {
             Some(detail) => {
                 let response = UrlDetailResponse {
-                    short_url: format!("http://0.0.0.0:8080/{}", detail.short_code),
+                    short_url: format!("{}/{}", state.base_url, detail.short_code),
                     long_url: detail.long_url,
                     created_at: detail.created_at.to_string(),
                 };
