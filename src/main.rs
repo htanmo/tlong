@@ -1,6 +1,8 @@
 use std::{env, process, time::Duration};
 
 use axum::{
+    error_handling::HandleErrorLayer,
+    http::StatusCode,
     routing::{delete, get, post},
     Router,
 };
@@ -9,6 +11,7 @@ use redis::Client;
 use sqlx::postgres::PgPoolOptions;
 use state::AppState;
 use tokio::signal;
+use tower::{buffer::BufferLayer, limit::RateLimitLayer, ServiceBuilder};
 use tower_http::{
     compression::CompressionLayer,
     cors::CorsLayer,
@@ -124,6 +127,18 @@ async fn main() {
         .route("/api/v1/shorten", get(handlers::get_all_short_url))
         .route("/api/v1/{short_code}", delete(handlers::delete_short_url))
         .route("/api/v1/{short_code}", get(handlers::get_short_url_details))
+        .layer(
+            ServiceBuilder::new()
+                .layer(HandleErrorLayer::new(|err| async move {
+                    error!("Internal error: {}", err);
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "An unexpected error occurred. Please try again later.".to_string(),
+                    )
+                }))
+                .layer(BufferLayer::new(1024))
+                .layer(RateLimitLayer::new(200, Duration::from_secs(1))),
+        )
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
