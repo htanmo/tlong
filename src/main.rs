@@ -91,7 +91,10 @@ async fn main() {
     });
 
     // Base url
-    let base_url = env::var("BASE_URL").unwrap_or_else(|_| format!("http://{}", &address));
+    let base_url = env::var("BASE_URL").unwrap_or_else(|_| {
+        warn!("BASE_URL environment variable not set, using SERVER_ADDRESS.");
+        format!("http://{}", &address)
+    });
 
     // Application state
     let state = AppState::new(pg_db, redis_db, base_url);

@@ -6,7 +6,7 @@ use axum::{
 };
 use redis::Commands;
 use serde_json::{json, Value};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, instrument};
 
 use crate::{
     models::UrlDetail,
@@ -15,6 +15,7 @@ use crate::{
     utils::{encode_long_url, valid_short_code, valid_url},
 };
 
+#[instrument]
 pub async fn health_check() -> (StatusCode, Json<Value>) {
     let response = json!({
         "status": "ok",
@@ -23,6 +24,7 @@ pub async fn health_check() -> (StatusCode, Json<Value>) {
     (StatusCode::OK, Json(response))
 }
 
+#[instrument(skip(state, payload))]
 pub async fn create_short_url(
     State(state): State<AppState>,
     payload: Result<Json<ShortenRequest>, JsonRejection>,
@@ -38,14 +40,13 @@ pub async fn create_short_url(
                 JsonRejection::JsonDataError(_) => json!({"error": "JSON data structure mismatch"}),
                 _ => json!({"error": "Unknown JSON parsing error"}),
             };
-            error!("JSON parsing error: {:?}", rejection);
+            error!(error = ?rejection, "JSON parsing error");
             return (StatusCode::BAD_REQUEST, Json(error_message)).into_response();
         }
     };
 
-    // Validate the long URL
     if !valid_url(&payload.long_url) {
-        error!("Invalid URL format: {}", payload.long_url);
+        error!(url = %payload.long_url, "Invalid URL format");
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({"error": "Invalid URL format"})),
@@ -53,11 +54,9 @@ pub async fn create_short_url(
             .into_response();
     }
 
-    // Generate short code
     let short_code = encode_long_url(&payload.long_url).await[0..8].to_string();
-    debug!("Generated short code: {}", short_code);
+    debug!(short_code = %short_code, "Generated short code");
 
-    // Insert into database
     let query = sqlx::query(
         "INSERT INTO urls (long_url, short_code) VALUES ($1, $2) ON CONFLICT (short_code) DO NOTHING",
     )
@@ -67,7 +66,7 @@ pub async fn create_short_url(
     match query.execute(&state.pg_db).await {
         Ok(_) => {
             let short_url = format!("{}/{}", state.base_url, short_code);
-            info!("Created short URL: {}", short_url);
+            info!(short_url = %short_url, "Created short URL");
             let response = ShortenResponse {
                 short_code,
                 short_url,
@@ -76,7 +75,7 @@ pub async fn create_short_url(
             (StatusCode::CREATED, Json(response)).into_response()
         }
         Err(e) => {
-            error!("Database error: {e}");
+            error!(error = %e, "Database error");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"error": "Failed to create short URL"})),
@@ -86,38 +85,38 @@ pub async fn create_short_url(
     }
 }
 
+#[instrument(skip(state))]
 pub async fn handle_short_url(
     State(state): State<AppState>,
     Path(short_code): Path<String>,
 ) -> impl IntoResponse {
-    // Short code validation
     if !valid_short_code(&short_code) {
+        error!(short_code = %short_code, "Invalid short code");
         return StatusCode::BAD_REQUEST.into_response();
     }
+
     let mut redis_conn = match state.redis_db.get() {
         Ok(conn) => conn,
         Err(e) => {
-            error!("Failed to get Redis connection: {e}");
+            error!(error = %e, "Failed to get Redis connection");
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     };
 
-    // Check cache in Redis
     match redis_conn.get::<_, Option<String>>(&short_code) {
         Ok(Some(long_url)) => {
-            info!("Cache hit: Redirecting to {}", long_url);
+            info!(short_code = %short_code, "Cache hit");
             return Redirect::permanent(&long_url).into_response();
         }
         Ok(None) => {
-            info!("Cache miss for short code: {}", short_code);
+            info!(short_code = %short_code, "Cache miss");
         }
         Err(e) => {
-            error!("Redis error: {e}");
+            error!(error = %e, "Redis error");
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     }
 
-    // Fetch long url from database
     let query = r#"
         SELECT long_url
         FROM urls
@@ -129,36 +128,34 @@ pub async fn handle_short_url(
         .await;
 
     match result {
-        Ok(data) => match data {
-            Some(long_url) => {
-                // Redirect
-                info!("Redirecting to long URL: {}", long_url);
-                if let Err(e) = redis_conn.set_ex::<_, _, ()>(&short_code, &long_url, 3600) {
-                    error!("Failed to cache URL in Redis: {e}");
-                }
-                Redirect::permanent(&long_url).into_response()
+        Ok(Some(long_url)) => {
+            info!(short_code = %short_code, "Redirecting to long URL");
+            if let Err(e) = redis_conn.set_ex::<_, _, ()>(&short_code, &long_url, 3600) {
+                error!(error = %e, "Failed to cache URL in Redis");
             }
-            None => {
-                error!("Short code not found: {}", short_code);
-                StatusCode::NOT_FOUND.into_response()
-            }
-        },
+            Redirect::permanent(&long_url).into_response()
+        }
+        Ok(None) => {
+            error!(short_code = %short_code, "Short code not found");
+            StatusCode::NOT_FOUND.into_response()
+        }
         Err(e) => {
-            error!("Database error: {e}");
+            error!(error = %e, "Database error");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
 }
 
+#[instrument(skip(state))]
 pub async fn delete_short_url(
     State(state): State<AppState>,
     Path(short_code): Path<String>,
 ) -> Result<Json<Value>, StatusCode> {
     if !valid_short_code(&short_code) {
+        error!(short_code = %short_code, "Invalid short code");
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    // Checking if the short code exists
     let result: Option<String> = sqlx::query_scalar(
         "
         DELETE FROM urls
@@ -169,18 +166,27 @@ pub async fn delete_short_url(
     .bind(&short_code)
     .fetch_optional(&state.pg_db)
     .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(|e| {
+        error!(error = %e, "Database error");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     match result {
-        Some(_) => Ok(Json(json!({"message": "short url deleted successfully"}))),
-        None => Err(StatusCode::NOT_FOUND),
+        Some(_) => {
+            info!(short_code = %short_code, "Short URL deleted successfully");
+            Ok(Json(json!({"message": "short url deleted successfully"})))
+        }
+        None => {
+            error!(short_code = %short_code, "Short code not found");
+            Err(StatusCode::NOT_FOUND)
+        }
     }
 }
 
+#[instrument(skip(state))]
 pub async fn get_all_short_url(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<UrlDetailResponse>>, StatusCode> {
-    // Fetching all the urls from the database
     let results = sqlx::query_as::<_, UrlDetail>(
         "
         SELECT short_code, long_url, created_at
@@ -190,7 +196,10 @@ pub async fn get_all_short_url(
     )
     .fetch_all(&state.pg_db)
     .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(|e| {
+        error!(error = %e, "Database error");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let response: Vec<UrlDetailResponse> = results
         .into_iter()
@@ -205,35 +214,39 @@ pub async fn get_all_short_url(
     Ok(Json(response))
 }
 
+#[instrument(skip(state))]
 pub async fn get_short_url_details(
     State(state): State<AppState>,
     Path(short_code): Path<String>,
 ) -> Result<Json<UrlDetailResponse>, StatusCode> {
-    // Validate the short url
     if !valid_short_code(&short_code) {
+        error!(short_code = %short_code, "Invalid short code");
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    // Get details about short code
     match sqlx::query_as::<_, UrlDetail>(
         "SELECT long_url, short_code, created_at FROM urls WHERE short_code = $1",
     )
-    .bind(short_code)
+    .bind(&short_code)
     .fetch_optional(&state.pg_db)
     .await
     {
-        Ok(url_details) => match url_details {
-            Some(detail) => {
-                let response = UrlDetailResponse {
-                    short_url: format!("{}/{}", state.base_url, &detail.short_code),
-                    short_code: detail.short_code,
-                    long_url: detail.long_url,
-                    created_at: detail.created_at.to_string(),
-                };
-                Ok(Json(response))
-            }
-            None => Err(StatusCode::NOT_FOUND),
-        },
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Ok(Some(detail)) => {
+            let response = UrlDetailResponse {
+                short_url: format!("{}/{}", state.base_url, &detail.short_code),
+                short_code: detail.short_code,
+                long_url: detail.long_url,
+                created_at: detail.created_at.to_string(),
+            };
+            Ok(Json(response))
+        }
+        Ok(None) => {
+            error!(short_code = %short_code, "Short code not found");
+            Err(StatusCode::NOT_FOUND)
+        }
+        Err(e) => {
+            error!(error = %e, "Database error");
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
     }
 }
