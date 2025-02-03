@@ -10,6 +10,8 @@ use sqlx::postgres::PgPoolOptions;
 use state::AppState;
 use tokio::signal;
 use tower_http::{
+    compression::CompressionLayer,
+    cors::CorsLayer,
     timeout::TimeoutLayer,
     trace::{DefaultMakeSpan, DefaultOnFailure, DefaultOnResponse, TraceLayer},
     LatencyUnit,
@@ -34,7 +36,15 @@ async fn main() {
         .with_default_directive(LevelFilter::INFO.into())
         .from_env_lossy();
 
-    let file_appender = RollingFileAppender::new(Rotation::DAILY, "/var/log/tlong", "tlong.log");
+    let log_dir = env::var("LOG_DIR").unwrap_or_else(|_| {
+        let log_dir = "/var/log/tlong".to_string();
+        warn!(
+            "LOG_DIR environment variable not set, using default directory: {}",
+            log_dir
+        );
+        log_dir
+    });
+    let file_appender = RollingFileAppender::new(Rotation::DAILY, log_dir, "tlong.log");
     let (non_blocking_writer, _guard) = tracing_appender::non_blocking(file_appender);
 
     tracing_subscriber::registry()
@@ -52,7 +62,6 @@ async fn main() {
     // Postgres
     let pg_db = PgPoolOptions::new()
         .max_connections(50)
-        .acquire_timeout(Duration::from_secs(5))
         .connect(&db_url)
         .await
         .unwrap_or_else(|e| {
@@ -77,7 +86,7 @@ async fn main() {
         process::exit(1);
     });
     let redis_db = r2d2::Pool::builder()
-        .max_size(15)
+        .max_size(25)
         .build(client)
         .unwrap_or_else(|e| {
             error!("Failed to connect to redis database: {e}");
@@ -86,14 +95,22 @@ async fn main() {
 
     // Server address
     let address = env::var("SERVER_ADDRESS").unwrap_or_else(|_| {
-        warn!("SERVER_ADDRESS environment variable not set, using default address.");
-        "0.0.0.0:8080".to_string()
+        let addr = "0.0.0.0:8080".to_string();
+        warn!(
+            "SERVER_ADDRESS environment variable not set, using default address: {}",
+            addr
+        );
+        addr
     });
 
     // Base url
     let base_url = env::var("BASE_URL").unwrap_or_else(|_| {
-        warn!("BASE_URL environment variable not set, using SERVER_ADDRESS.");
-        format!("http://{}", &address)
+        let serv_addr = format!("http://{}", &address);
+        warn!(
+            "BASE_URL environment variable not set, using SERVER_ADDRESS: {}",
+            serv_addr
+        );
+        serv_addr
     });
 
     // Application state
@@ -117,7 +134,9 @@ async fn main() {
                 )
                 .on_failure(DefaultOnFailure::new().level(Level::ERROR)),
         )
-        .layer(TimeoutLayer::new(Duration::from_secs(15)))
+        .layer(TimeoutLayer::new(Duration::from_secs(30)))
+        .layer(CorsLayer::permissive())
+        .layer(CompressionLayer::new())
         .with_state(state);
 
     info!("Starting server on {}", &address);
