@@ -9,10 +9,7 @@ use serde_json::{json, Value};
 use tracing::{debug, error, info, instrument};
 
 use crate::{
-    models::UrlDetail,
-    state::AppState,
-    types::{ShortenRequest, ShortenResponse, UrlDetailResponse},
-    utils::{encode_long_url, valid_short_code, valid_url},
+    db::models::UrlDetail, state::AppState, types::{ShortenRequest, ShortenResponse, UrlDetailResponse}, utils::{encode_long_url, valid_short_code, valid_url}
 };
 
 #[instrument]

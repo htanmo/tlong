@@ -1,3 +1,5 @@
+// pub mod logging;
+
 use sha2::{Digest, Sha256};
 
 // Encoding the long url

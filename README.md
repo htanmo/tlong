@@ -42,7 +42,7 @@ For the times, when your urls are too long.
     List of environment variables this project needs.
     ```dotenv
     APP_LOG=trace # (defaults to `log`)
-    LOG_DIR=/tlong # (defaults to `/var/log/tlong`)
+    LOG_DIR=var/log/tlong # (defaults to `./log/`)
     SERVER_ADDRESS=127.0.0.1:3000 # (defaults to `0.0.0.0:8080`)
     REDIS_URL=redis://127.0.0.1:6379
     DATABASE_URL=postgres://username:password@localhost/dbname
